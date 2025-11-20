@@ -67,7 +67,9 @@ publish-single-file.bat
 
 Output: `bin\Release\net8.0-windows\win-x64\publish\SoundWatcher.exe`
 
-- **Size**: ~550 KB
+- **Size**: ~950 KB
+- **Portable**: Single EXE file, icon embedded, no dependencies
+- **No PDB**: Debug symbols excluded from release build
 - **Requires**: .NET 8 Runtime installed on the system
 
 ### Standalone EXE (Fully Self-Contained)

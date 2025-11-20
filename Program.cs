@@ -342,10 +342,16 @@ public class TrayApplicationContext : ApplicationContext
     {
         try
         {
-            var iconPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Resources", "AppIcon.ico");
-            if (File.Exists(iconPath))
+            // Load icon from embedded resources
+            var assembly = System.Reflection.Assembly.GetExecutingAssembly();
+            var resourceName = "SoundWatcher.Resources.AppIcon.ico";
+
+            using (var stream = assembly.GetManifestResourceStream(resourceName))
             {
-                return new Icon(iconPath);
+                if (stream != null)
+                {
+                    return new Icon(stream);
+                }
             }
         }
         catch { }

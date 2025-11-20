@@ -15,13 +15,16 @@
     <!-- Single-file publish configuration -->
     <PublishSingleFile>true</PublishSingleFile>
     <SelfContained>false</SelfContained>
-    <IncludeNativeLibrariesForSelfContained>true</IncludeNativeLibrariesForSelfContained>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+
+    <!-- Disable PDB generation for Release builds -->
+    <DebugType Condition="'$(Configuration)' == 'Release'">None</DebugType>
+    <DebugSymbols Condition="'$(Configuration)' == 'Release'">false</DebugSymbols>
   </PropertyGroup>
 
   <ItemGroup>
-    <Content Include="Resources\AppIcon.ico">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
+    <!-- Embed icon as resource instead of copying to output -->
+    <EmbeddedResource Include="Resources\AppIcon.ico" />
   </ItemGroup>
 
   <ItemGroup>

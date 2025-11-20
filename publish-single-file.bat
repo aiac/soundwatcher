@@ -16,6 +16,8 @@ if %ERRORLEVEL% EQU 0 (
     echo Single-file EXE created at:
     echo bin\Release\net8.0-windows\win-x64\publish\SoundWatcher.exe
     echo.
+    echo The EXE is fully portable - just copy it anywhere and run.
+    echo Icon is embedded, no Resources folder needed.
     echo This version requires .NET 8 Runtime to be installed.
     echo.
 ) else (
