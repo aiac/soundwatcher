@@ -24,7 +24,7 @@ Audio activity monitoring tool for Windows (WASAPI/ASIO) with HTTP notification 
 
 I use SoundWatcher to automatically power on my Yamaha HS-80 studio monitors only when needed:
 
-![Monitor turning on](monitor.mp4)
+![Monitor turning on](monitor.gif)
 
 This works by sending HTTP requests to a Sonoff switch running Tasmota firmware:
 
@@ -32,7 +32,7 @@ This works by sending HTTP requests to a Sonoff switch running Tasmota firmware:
 
 As a bonus, an LED strip controlled by Tasmota pulses to the music:
 
-![LED strip pulsing](led.mp4)
+![LED strip pulsing](led.gif)
 
 ## Requirements
 

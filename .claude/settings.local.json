@@ -11,7 +11,9 @@
       "Bash(py:*)",
       "Bash(python:*)",
       "Bash(dotnet publish:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(where:*)",
+      "Bash(ffmpeg:*)"
     ],
     "deny": [],
     "ask": []
