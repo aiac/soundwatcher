@@ -51,7 +51,7 @@ public class TrayApplicationContext : ApplicationContext
         // Create tray icon
         _trayIcon = new NotifyIcon
         {
-            Icon = LoadIcon(),
+            Icon = CreateIconWithOverlay(false),
             Visible = true,
             Text = "SoundWatcher - Monitoring Active"
         };
@@ -76,7 +76,12 @@ public class TrayApplicationContext : ApplicationContext
         // Start monitoring if enabled and devices are configured
         if (_settings.MonitoringEnabled && _settings.MonitoredDeviceIds.Count > 0)
         {
+            Logger.Log("[STARTUP] Starting monitoring on application startup...");
             StartMonitoring();
+        }
+        else
+        {
+            Logger.Log($"[STARTUP] Monitoring not started: MonitoringEnabled={_settings.MonitoringEnabled}, DeviceCount={_settings.MonitoredDeviceIds.Count}");
         }
     }
 
@@ -84,22 +89,30 @@ public class TrayApplicationContext : ApplicationContext
     {
         try
         {
+            Logger.Log("[START] Getting available devices...");
             var devices = _audioMonitor.GetAllAvailableDevices()
                 .Where(d => _settings.MonitoredDeviceIds.Contains(d.Id))
                 .ToList();
 
+            Logger.Log($"[START] Found {devices.Count} devices to monitor");
+
             if (devices.Count == 0)
             {
                 _trayIcon.Text = "SoundWatcher - No devices configured";
+                Logger.Log("[START] No devices configured, aborting");
                 return;
             }
 
+            Logger.Log($"[START] Calling AudioMonitor.StartMonitoring with interval={_settings.CheckIntervalMs}ms, volumeInterval={_settings.VolumeUpdateIntervalMs}ms, threshold={_settings.AudioThreshold}%");
             _audioMonitor.StartMonitoring(devices, _settings.CheckIntervalMs, _settings.VolumeUpdateIntervalMs, _settings.AudioThreshold);
             _isMonitoringActive = true;
+            Logger.Log("[START] Monitoring started successfully, updating tray icon...");
             UpdateTrayIcon();
+            Logger.Log("[START] StartMonitoring completed");
         }
         catch (Exception ex)
         {
+            Logger.Log($"[START] ERROR: {ex.Message}\n{ex.StackTrace}");
             MessageBox.Show($"Failed to start monitoring: {ex.Message}", "Error",
                 MessageBoxButtons.OK, MessageBoxIcon.Error);
         }

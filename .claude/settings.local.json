@@ -13,7 +13,8 @@
       "Bash(dotnet publish:*)",
       "Bash(ls:*)",
       "Bash(where:*)",
-      "Bash(ffmpeg:*)"
+      "Bash(ffmpeg:*)",
+      "Bash(taskkill:*)"
     ],
     "deny": [],
     "ask": []
