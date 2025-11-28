@@ -17,6 +17,11 @@ public class AppSettings
     public bool OnUrlsEnabled { get; set; } = true;
     public bool OffUrlsEnabled { get; set; } = true;
     public bool VolumeUrlEnabled { get; set; } = true;
+
+    // Startup and exit URLs
+    public bool StartupUrlEnabled { get; set; } = false;
+    public bool ExitUrlEnabled { get; set; } = false;
+
     public int CheckIntervalMs { get; set; } = 1000;
     public int TurnOffDelayMs { get; set; } = 30000;
     public List<string> MonitoredDeviceIds { get; set; } = new();

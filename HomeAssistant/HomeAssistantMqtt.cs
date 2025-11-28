@@ -113,7 +113,7 @@ public class HomeAssistantMqtt : IDisposable
                 name = _deviceName,
                 manufacturer = "SoundWatcher",
                 model = "Audio Monitor",
-                sw_version = "2.0"
+                sw_version = "1.0.1"
             },
             icon = "mdi:speaker"
         };

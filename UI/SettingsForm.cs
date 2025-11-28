@@ -29,6 +29,8 @@ public partial class SettingsForm : Form
     private TextBox offUrl2TextBox = null!;
     private CheckBox volumeUrlEnabledCheckBox = null!;
     private TextBox volumeUrlTextBox = null!;
+    private CheckBox startupUrlEnabledCheckBox = null!;
+    private CheckBox exitUrlEnabledCheckBox = null!;
     private Button testOnButton = null!;
     private Button testOffButton = null!;
 
@@ -268,12 +270,30 @@ public partial class SettingsForm : Form
             Size = new Size(460, 35),
             ForeColor = Color.Gray
         };
+        y += 45;
+
+        // Startup/Exit URLs
+        startupUrlEnabledCheckBox = new CheckBox
+        {
+            Text = "Send ON URLs on app startup",
+            Location = new Point(0, y),
+            AutoSize = true
+        };
+        y += 25;
+
+        exitUrlEnabledCheckBox = new CheckBox
+        {
+            Text = "Send OFF URLs on app exit",
+            Location = new Point(0, y),
+            AutoSize = true
+        };
 
         panel.Controls.AddRange(new Control[]
         {
             onUrlsEnabledCheckBox, onUrl1Label, onUrl1TextBox, onUrl2Label, onUrl2TextBox, testOnButton,
             offUrlsEnabledCheckBox, offUrl1Label, offUrl1TextBox, offUrl2Label, offUrl2TextBox, testOffButton,
-            volumeUrlEnabledCheckBox, volumeUrlLabel, volumeUrlTextBox, volumeHelpLabel
+            volumeUrlEnabledCheckBox, volumeUrlLabel, volumeUrlTextBox, volumeHelpLabel,
+            startupUrlEnabledCheckBox, exitUrlEnabledCheckBox
         });
 
         urlsTab.Controls.Add(panel);
@@ -423,6 +443,8 @@ public partial class SettingsForm : Form
         if (_settings.OffUrls.Count > 1) offUrl2TextBox.Text = _settings.OffUrls[1];
         volumeUrlEnabledCheckBox.Checked = _settings.VolumeUrlEnabled;
         volumeUrlTextBox.Text = _settings.VolumeUrl;
+        startupUrlEnabledCheckBox.Checked = _settings.StartupUrlEnabled;
+        exitUrlEnabledCheckBox.Checked = _settings.ExitUrlEnabled;
 
         // Load timings
         checkIntervalNumeric.Value = _settings.CheckIntervalMs;
@@ -545,6 +567,8 @@ public partial class SettingsForm : Form
 
         _settings.VolumeUrlEnabled = volumeUrlEnabledCheckBox.Checked;
         _settings.VolumeUrl = volumeUrlTextBox.Text;
+        _settings.StartupUrlEnabled = startupUrlEnabledCheckBox.Checked;
+        _settings.ExitUrlEnabled = exitUrlEnabledCheckBox.Checked;
 
         // Save timings
         _settings.CheckIntervalMs = (int)checkIntervalNumeric.Value;

@@ -73,6 +73,12 @@ public class TrayApplicationContext : ApplicationContext
         _trayIcon.Click += OnTrayIconClick;
         _trayIcon.DoubleClick += (s, e) => ShowSettings(s, e);
 
+        // Send startup URL if enabled
+        if (_settings.StartupUrlEnabled)
+        {
+            SendOnNotifications();
+        }
+
         // Start monitoring if enabled and devices are configured
         if (_settings.MonitoringEnabled && _settings.MonitoredDeviceIds.Count > 0)
         {
@@ -345,9 +351,18 @@ public class TrayApplicationContext : ApplicationContext
 
     private void Exit(object? sender, EventArgs e)
     {
+        // Send exit URL if enabled
+        if (_settings.ExitUrlEnabled)
+        {
+            SendOffNotifications();
+            // Give a brief moment for the request to complete
+            System.Threading.Thread.Sleep(500);
+        }
+
         _trayIcon.Visible = false;
         _audioMonitor.Dispose();
         _offDelayTimer?.Dispose();
+        _homeAssistant?.Dispose();
         Application.Exit();
     }
 

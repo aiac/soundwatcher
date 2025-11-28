@@ -73,6 +73,9 @@ public class AudioMonitor : IDisposable
 
         Logger.Log($"[OPTIMIZE] Starting with check interval: {checkIntervalMs}ms (audio OFF)");
 
+        // Trigger an immediate check to ensure monitoring is active right away
+        CheckAudioState(null, null!);
+
         // Start peak sampling and smoothing if enabled
         if (volumeUpdateIntervalMs > 0)
         {
