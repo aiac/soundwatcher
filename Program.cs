@@ -29,8 +29,10 @@ public class TrayApplicationContext : ApplicationContext
     private HomeAssistantMqtt? _homeAssistant;
     private SettingsForm? _settingsForm;
     private System.Timers.Timer? _offDelayTimer;
+    private System.Timers.Timer? _deviceCheckTimer;
     private bool _isMonitoringActive = true;
     private ToolStripMenuItem? _pauseMenuItem;
+    private List<string> _lastAvailableDeviceIds = new();
 
     public TrayApplicationContext()
     {
@@ -73,11 +75,8 @@ public class TrayApplicationContext : ApplicationContext
         _trayIcon.Click += OnTrayIconClick;
         _trayIcon.DoubleClick += (s, e) => ShowSettings(s, e);
 
-        // Send startup URL if enabled
-        if (_settings.StartupUrlEnabled)
-        {
-            SendOnNotifications();
-        }
+        // Handle Windows shutdown/logoff to send exit URLs
+        Microsoft.Win32.SystemEvents.SessionEnding += OnSessionEnding;
 
         // Start monitoring if enabled and devices are configured
         if (_settings.MonitoringEnabled && _settings.MonitoredDeviceIds.Count > 0)
@@ -89,6 +88,26 @@ public class TrayApplicationContext : ApplicationContext
         {
             Logger.Log($"[STARTUP] Monitoring not started: MonitoringEnabled={_settings.MonitoringEnabled}, DeviceCount={_settings.MonitoredDeviceIds.Count}");
         }
+
+        // Send startup URL if enabled (run asynchronously to not block monitoring)
+        if (_settings.StartupUrlEnabled)
+        {
+            Task.Run(async () =>
+            {
+                Logger.Log("[STARTUP] Sending startup URLs...");
+                await Task.Delay(100); // Small delay to ensure monitoring is fully started
+                SendOnNotifications();
+            });
+        }
+
+        // Start device hotplug detection timer (check every 5 seconds for new devices)
+        _deviceCheckTimer = new System.Timers.Timer(5000);
+        _deviceCheckTimer.Elapsed += CheckForNewDevices;
+        _deviceCheckTimer.AutoReset = true;
+        _deviceCheckTimer.Start();
+
+        // Store initial device list
+        _lastAvailableDeviceIds = _audioMonitor.GetAllAvailableDevices().Select(d => d.Id).ToList();
     }
 
     private void StartMonitoring()
@@ -349,9 +368,66 @@ public class TrayApplicationContext : ApplicationContext
         }
     }
 
+    private void CheckForNewDevices(object? sender, System.Timers.ElapsedEventArgs e)
+    {
+        try
+        {
+            var currentDevices = _audioMonitor.GetAllAvailableDevices().Select(d => d.Id).ToList();
+
+            // Check if any new devices appeared
+            var newDevices = currentDevices.Except(_lastAvailableDeviceIds).ToList();
+
+            if (newDevices.Count > 0)
+            {
+                Logger.Log($"[HOTPLUG] Detected {newDevices.Count} new audio device(s)");
+
+                // Check if any of the new devices are in our monitored list
+                var newMonitoredDevices = newDevices.Intersect(_settings.MonitoredDeviceIds).ToList();
+
+                if (newMonitoredDevices.Count > 0 && _isMonitoringActive)
+                {
+                    Logger.Log($"[HOTPLUG] {newMonitoredDevices.Count} new device(s) are configured for monitoring - restarting monitoring");
+
+                    // Restart monitoring to include the new devices
+                    StopMonitoring();
+                    StartMonitoring();
+                }
+            }
+
+            // Update device list
+            _lastAvailableDeviceIds = currentDevices;
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"[HOTPLUG] Error checking for new devices: {ex.Message}");
+        }
+    }
+
+    private void OnSessionEnding(object sender, Microsoft.Win32.SessionEndingEventArgs e)
+    {
+        Logger.Log($"[SHUTDOWN] Windows is shutting down/logging off: {e.Reason}");
+
+        // Send exit URL if enabled
+        if (_settings.ExitUrlEnabled)
+        {
+            Logger.Log("[SHUTDOWN] Sending exit URLs...");
+            SendOffNotifications();
+            // Give time for the request to complete
+            System.Threading.Thread.Sleep(1000);
+            Logger.Log("[SHUTDOWN] Exit URLs sent");
+        }
+
+        // Cleanup
+        _trayIcon.Visible = false;
+        _audioMonitor.Dispose();
+        _offDelayTimer?.Dispose();
+        _deviceCheckTimer?.Dispose();
+        _homeAssistant?.Dispose();
+    }
+
     private void Exit(object? sender, EventArgs e)
     {
-        // Send exit URL if enabled
+        // Send exit URL if enabled (only on manual exit, not shutdown)
         if (_settings.ExitUrlEnabled)
         {
             SendOffNotifications();
@@ -362,7 +438,9 @@ public class TrayApplicationContext : ApplicationContext
         _trayIcon.Visible = false;
         _audioMonitor.Dispose();
         _offDelayTimer?.Dispose();
+        _deviceCheckTimer?.Dispose();
         _homeAssistant?.Dispose();
+        Microsoft.Win32.SystemEvents.SessionEnding -= OnSessionEnding;
         Application.Exit();
     }
 
@@ -395,6 +473,8 @@ public class TrayApplicationContext : ApplicationContext
             _trayIcon?.Dispose();
             _audioMonitor?.Dispose();
             _offDelayTimer?.Dispose();
+            _deviceCheckTimer?.Dispose();
+            _homeAssistant?.Dispose();
         }
         base.Dispose(disposing);
     }

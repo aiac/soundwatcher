@@ -165,6 +165,7 @@ public class AudioMonitor : IDisposable
         if (currentState != _lastState)
         {
             _lastState = currentState;
+            Logger.Log($"[CHECK] Audio state changed to: {(currentState ? "ON" : "OFF")}");
             AudioStateChanged?.Invoke(this, new AudioStateChangedEventArgs(currentState));
 
             // Optimize check interval based on new state
