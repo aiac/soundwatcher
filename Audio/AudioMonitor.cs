@@ -9,6 +9,7 @@ public class AudioMonitor : IDisposable
     private readonly WasapiMonitor _wasapiMonitor;
     private System.Timers.Timer? _checkTimer;
     private System.Timers.Timer? _volumeTimer;
+    private System.Timers.Timer? _wledTimer;
     private System.Timers.Timer? _peakSamplingTimer;
     private bool _isMonitoring;
     private bool _lastState;
@@ -22,9 +23,11 @@ public class AudioMonitor : IDisposable
     // Dynamic interval optimization
     private int _baseCheckIntervalMs;
     private int _volumeUpdateIntervalMs;
+    private int _wledUpdateIntervalMs;
 
     public event EventHandler<AudioStateChangedEventArgs>? AudioStateChanged;
     public event EventHandler<AudioVolumeEventArgs>? AudioVolumeChanged;
+    public event EventHandler<AudioVolumeEventArgs>? WledVolumeChanged;
 
     public AudioMonitor()
     {
@@ -44,9 +47,10 @@ public class AudioMonitor : IDisposable
     /// </summary>
     /// <param name="devices">List of device IDs to monitor</param>
     /// <param name="checkIntervalMs">Base interval in milliseconds to check for audio when OFF or not sending peak data</param>
-    /// <param name="volumeUpdateIntervalMs">Interval in milliseconds to send volume updates (0 to disable)</param>
+    /// <param name="volumeUpdateIntervalMs">Interval in milliseconds to send HTTP volume updates (0 to disable)</param>
+    /// <param name="wledUpdateIntervalMs">Interval in milliseconds to send WLED volume updates (0 to disable)</param>
     /// <param name="audioThresholdPercent">Audio detection threshold as percentage (0-100)</param>
-    public void StartMonitoring(List<AudioDeviceInfo> devices, int checkIntervalMs, int volumeUpdateIntervalMs = 0, float audioThresholdPercent = 2.0f)
+    public void StartMonitoring(List<AudioDeviceInfo> devices, int checkIntervalMs, int volumeUpdateIntervalMs = 0, int wledUpdateIntervalMs = 0, float audioThresholdPercent = 2.0f)
     {
         StopMonitoring();
 
@@ -56,6 +60,7 @@ public class AudioMonitor : IDisposable
         // Store configuration
         _baseCheckIntervalMs = checkIntervalMs;
         _volumeUpdateIntervalMs = volumeUpdateIntervalMs;
+        _wledUpdateIntervalMs = wledUpdateIntervalMs;
 
         // Set audio threshold
         _wasapiMonitor.SetAudioThreshold(audioThresholdPercent);
@@ -76,10 +81,10 @@ public class AudioMonitor : IDisposable
         // Trigger an immediate check to ensure monitoring is active right away
         CheckAudioState(null, null!);
 
-        // Start peak sampling and smoothing if enabled
-        if (volumeUpdateIntervalMs > 0)
+        // Start peak sampling and smoothing if enabled (for HTTP or WLED)
+        if (volumeUpdateIntervalMs > 0 || wledUpdateIntervalMs > 0)
         {
-            Logger.Log($"[DEBUG] Starting peak smoothing: sample every {PEAK_SAMPLE_RATE_MS}ms, send average every {volumeUpdateIntervalMs}ms");
+            Logger.Log($"[DEBUG] Starting peak smoothing: sample every {PEAK_SAMPLE_RATE_MS}ms");
 
             // High-frequency sampling timer (10ms) to collect peak samples
             _peakSamplingTimer = new System.Timers.Timer(PEAK_SAMPLE_RATE_MS);
@@ -87,15 +92,29 @@ public class AudioMonitor : IDisposable
             _peakSamplingTimer.AutoReset = true;
             _peakSamplingTimer.Start();
 
-            // Lower-frequency timer to send averaged peak
-            _volumeTimer = new System.Timers.Timer(volumeUpdateIntervalMs);
-            _volumeTimer.Elapsed += SendAveragedPeak;
-            _volumeTimer.AutoReset = true;
-            _volumeTimer.Start();
+            // HTTP volume timer
+            if (volumeUpdateIntervalMs > 0)
+            {
+                Logger.Log($"[DEBUG] HTTP volume updates enabled: {volumeUpdateIntervalMs}ms");
+                _volumeTimer = new System.Timers.Timer(volumeUpdateIntervalMs);
+                _volumeTimer.Elapsed += SendAveragedPeak;
+                _volumeTimer.AutoReset = true;
+                _volumeTimer.Start();
+            }
+
+            // WLED timer (separate from HTTP)
+            if (wledUpdateIntervalMs > 0)
+            {
+                Logger.Log($"[DEBUG] WLED updates enabled: {wledUpdateIntervalMs}ms");
+                _wledTimer = new System.Timers.Timer(wledUpdateIntervalMs);
+                _wledTimer.Elapsed += SendAveragedPeakWled;
+                _wledTimer.AutoReset = true;
+                _wledTimer.Start();
+            }
         }
         else
         {
-            Logger.Log($"[DEBUG] Peak monitoring disabled (interval = {volumeUpdateIntervalMs})");
+            Logger.Log($"[DEBUG] Peak monitoring disabled");
         }
 
         _isMonitoring = true;
@@ -126,6 +145,13 @@ public class AudioMonitor : IDisposable
             _volumeTimer.Stop();
             _volumeTimer.Dispose();
             _volumeTimer = null;
+        }
+
+        if (_wledTimer != null)
+        {
+            _wledTimer.Stop();
+            _wledTimer.Dispose();
+            _wledTimer = null;
         }
 
         lock (_peakLock)
@@ -270,6 +296,26 @@ public class AudioMonitor : IDisposable
 
         Logger.Log($"[DEBUG] SendAveragedPeak: level={averagePeak}, subscribers={AudioVolumeChanged?.GetInvocationList().Length ?? 0}");
         AudioVolumeChanged?.Invoke(this, new AudioVolumeEventArgs(averagePeak));
+    }
+
+    /// <summary>
+    /// Sends raw peak level for WLED (no averaging for better responsiveness)
+    /// </summary>
+    private void SendAveragedPeakWled(object? sender, System.Timers.ElapsedEventArgs e)
+    {
+        if (!_isMonitoring)
+            return;
+
+        // Only send if audio is playing
+        if (!IsAudioPlaying())
+        {
+            return;
+        }
+
+        // Use raw peak level for WLED (no averaging) for better responsiveness and full dynamic range
+        int peakLevel = GetPeakLevel();
+
+        WledVolumeChanged?.Invoke(this, new AudioVolumeEventArgs(peakLevel));
     }
 
     public void Dispose()

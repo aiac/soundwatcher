@@ -28,6 +28,16 @@ public class AppSettings
     public bool MonitoringEnabled { get; set; } = true;
     public float AudioThreshold { get; set; } = 2.0f; // Percentage (0-100), default 2%
 
+    // WLED UDP settings
+    public bool WledEnabled { get; set; } = false;
+    public string WledHost { get; set; } = string.Empty;
+    public int WledPort { get; set; } = 21324;
+    public int WledLedCount { get; set; } = 60;
+    public int WledUpdateIntervalMs { get; set; } = 0; // 0 = disabled
+    public int WledVisualizationMode { get; set; } = 0; // 0=gradient, 1=left-to-right, 2=center-out, 3=brightness
+    public string WledColor { get; set; } = "#FF0000"; // Hex color (default red)
+    public int WledPeakDecayMs { get; set; } = 150; // VU meter decay time in milliseconds (50-500ms typical)
+
     // Home Assistant MQTT settings
     public bool MqttEnabled { get; set; } = false;
     public string MqttBroker { get; set; } = "localhost";

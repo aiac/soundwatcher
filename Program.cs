@@ -27,6 +27,7 @@ public class TrayApplicationContext : ApplicationContext
     private readonly AudioMonitor _audioMonitor;
     private readonly AppSettings _settings;
     private HomeAssistantMqtt? _homeAssistant;
+    private WledUdpSender? _wledSender;
     private SettingsForm? _settingsForm;
     private System.Timers.Timer? _offDelayTimer;
     private System.Timers.Timer? _deviceCheckTimer;
@@ -43,11 +44,21 @@ public class TrayApplicationContext : ApplicationContext
         _audioMonitor = new AudioMonitor();
         _audioMonitor.AudioStateChanged += OnAudioStateChanged;
         _audioMonitor.AudioVolumeChanged += OnAudioVolumeChanged;
+        _audioMonitor.WledVolumeChanged += OnWledVolumeChanged;
+
+        // Migrate old Windows device IDs to friendly names (for existing users)
+        MigrateDeviceIds();
 
         // Initialize Home Assistant MQTT if enabled
         if (_settings.MqttEnabled)
         {
             InitializeHomeAssistant();
+        }
+
+        // Initialize WLED UDP if enabled
+        if (_settings.WledEnabled)
+        {
+            InitializeWled();
         }
 
         // Create tray icon
@@ -97,6 +108,15 @@ public class TrayApplicationContext : ApplicationContext
                 Logger.Log("[STARTUP] Sending startup URLs...");
                 await Task.Delay(100); // Small delay to ensure monitoring is fully started
                 SendOnNotifications();
+
+                // Start turn-off delay timer to check if audio is playing
+                // If no audio after delay, send OFF URLs
+                await Task.Delay(1000); // Wait for monitoring to stabilize
+                if (!_audioMonitor.IsAudioPlaying())
+                {
+                    Logger.Log("[STARTUP] No audio detected after startup - starting turn-off delay timer");
+                    StartTurnOffDelayTimer();
+                }
             });
         }
 
@@ -128,8 +148,8 @@ public class TrayApplicationContext : ApplicationContext
                 return;
             }
 
-            Logger.Log($"[START] Calling AudioMonitor.StartMonitoring with interval={_settings.CheckIntervalMs}ms, volumeInterval={_settings.VolumeUpdateIntervalMs}ms, threshold={_settings.AudioThreshold}%");
-            _audioMonitor.StartMonitoring(devices, _settings.CheckIntervalMs, _settings.VolumeUpdateIntervalMs, _settings.AudioThreshold);
+            Logger.Log($"[START] Calling AudioMonitor.StartMonitoring with interval={_settings.CheckIntervalMs}ms, volumeInterval={_settings.VolumeUpdateIntervalMs}ms, wledInterval={_settings.WledUpdateIntervalMs}ms, threshold={_settings.AudioThreshold}%");
+            _audioMonitor.StartMonitoring(devices, _settings.CheckIntervalMs, _settings.VolumeUpdateIntervalMs, _settings.WledUpdateIntervalMs, _settings.AudioThreshold);
             _isMonitoringActive = true;
             Logger.Log("[START] Monitoring started successfully, updating tray icon...");
             UpdateTrayIcon();
@@ -184,26 +204,37 @@ public class TrayApplicationContext : ApplicationContext
         else
         {
             // Audio stopped - wait for delay before sending OFF
-            _offDelayTimer?.Stop();
-            _offDelayTimer = new System.Timers.Timer(_settings.TurnOffDelayMs);
-            _offDelayTimer.Elapsed += async (s, args) =>
-            {
-                _offDelayTimer.Stop();
-                // Check if audio is still not playing before sending OFF
-                if (!_audioMonitor.IsAudioPlaying())
-                {
-                    SendOffNotifications();
-
-                    // Update Home Assistant state to "idle"
-                    if (_homeAssistant != null)
-                    {
-                        await _homeAssistant.PublishStateAsync("idle");
-                    }
-                }
-            };
-            _offDelayTimer.AutoReset = false;
-            _offDelayTimer.Start();
+            StartTurnOffDelayTimer();
         }
+    }
+
+    private void StartTurnOffDelayTimer()
+    {
+        _offDelayTimer?.Stop();
+        _offDelayTimer = new System.Timers.Timer(_settings.TurnOffDelayMs);
+        _offDelayTimer.Elapsed += async (s, args) =>
+        {
+            _offDelayTimer?.Stop();
+            // Check if audio is still not playing before sending OFF
+            if (!_audioMonitor.IsAudioPlaying())
+            {
+                Logger.Log("[DELAY] Turn-off delay expired - sending OFF notifications");
+                SendOffNotifications();
+
+                // Update Home Assistant state to "idle"
+                if (_homeAssistant != null)
+                {
+                    await _homeAssistant.PublishStateAsync("idle");
+                }
+            }
+            else
+            {
+                Logger.Log("[DELAY] Turn-off delay expired but audio is playing - not sending OFF");
+            }
+        };
+        _offDelayTimer.AutoReset = false;
+        _offDelayTimer.Start();
+        Logger.Log($"[DELAY] Turn-off delay timer started ({_settings.TurnOffDelayMs}ms)");
     }
 
     private async void InitializeHomeAssistant()
@@ -229,6 +260,35 @@ public class TrayApplicationContext : ApplicationContext
         {
             Logger.Log($"[HA] Failed to initialize Home Assistant: {ex.Message}");
             _homeAssistant = null;
+        }
+    }
+
+    private void InitializeWled()
+    {
+        if (!_settings.WledEnabled)
+        {
+            Logger.Log("[WLED] WLED integration is disabled");
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(_settings.WledHost))
+        {
+            Logger.Log("[WLED] WLED host not configured");
+            return;
+        }
+
+        try
+        {
+            _wledSender = new WledUdpSender();
+            _wledSender.SetTarget(_settings.WledHost, _settings.WledPort);
+            _wledSender.SetVuMeterDecay(_settings.WledPeakDecayMs);
+            Logger.Log($"[WLED] WLED UDP sender initialized for {_settings.WledHost}:{_settings.WledPort} with {_settings.WledLedCount} LEDs, decay={_settings.WledPeakDecayMs}ms");
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"[WLED] Failed to initialize WLED: {ex.Message}");
+            _wledSender?.Dispose();
+            _wledSender = null;
         }
     }
 
@@ -268,20 +328,34 @@ public class TrayApplicationContext : ApplicationContext
     {
         Logger.Log($"[DEBUG] OnAudioVolumeChanged called: level={e.Level}, VolumeUrl={_settings.VolumeUrl}, Enabled={_settings.VolumeUrlEnabled}");
 
-        if (!_settings.VolumeUrlEnabled || string.IsNullOrWhiteSpace(_settings.VolumeUrl))
+        // Send HTTP volume notification if enabled
+        if (_settings.VolumeUrlEnabled && !string.IsNullOrWhiteSpace(_settings.VolumeUrl))
         {
-            Logger.Log($"[DEBUG] VolumeUrl disabled or empty, skipping");
-            return;
+            try
+            {
+                await HttpNotifier.SendVolumeNotification(_settings.VolumeUrl, e.Level);
+            }
+            catch (Exception ex)
+            {
+                // Silently log error - don't disturb user for network issues
+                Logger.Log($"Failed to send volume notification: {ex.Message}");
+            }
         }
+    }
 
-        try
+    private void OnWledVolumeChanged(object? sender, AudioVolumeEventArgs e)
+    {
+        // Send WLED UDP packet if enabled
+        if (_settings.WledEnabled && _wledSender != null)
         {
-            await HttpNotifier.SendVolumeNotification(_settings.VolumeUrl, e.Level);
-        }
-        catch (Exception ex)
-        {
-            // Silently log error - don't disturb user for network issues
-            Logger.Log($"Failed to send volume notification: {ex.Message}");
+            try
+            {
+                _wledSender.SendAudioPeak(e.Level, _settings.WledLedCount, _settings.WledVisualizationMode, _settings.WledColor);
+            }
+            catch (Exception ex)
+            {
+                Logger.Log($"Failed to send WLED peak: {ex.Message}");
+            }
         }
     }
 
@@ -304,6 +378,14 @@ public class TrayApplicationContext : ApplicationContext
             if (_settings.MonitoredDeviceIds.Count > 0)
             {
                 StartMonitoring();
+            }
+
+            // Reinitialize WLED if settings changed
+            _wledSender?.Dispose();
+            _wledSender = null;
+            if (_settings.WledEnabled)
+            {
+                InitializeWled();
             }
         }
 
@@ -368,6 +450,63 @@ public class TrayApplicationContext : ApplicationContext
         }
     }
 
+    private void MigrateDeviceIds()
+    {
+        try
+        {
+            if (_settings.MonitoredDeviceIds.Count == 0)
+                return;
+
+            Logger.Log("[MIGRATE] Checking if device IDs need migration...");
+
+            var allDevices = _audioMonitor.GetAllAvailableDevices();
+            var migratedIds = new List<string>();
+            var needsSave = false;
+
+            foreach (var oldId in _settings.MonitoredDeviceIds)
+            {
+                // Check if this is an old-style Windows device ID (contains {GUID})
+                if (oldId.Contains("{") && oldId.Contains("}"))
+                {
+                    // Try to find device by Windows ID
+                    var matchingDevice = allDevices.FirstOrDefault(d => d.WindowsDeviceId == oldId);
+
+                    if (matchingDevice != null)
+                    {
+                        Logger.Log($"[MIGRATE] Migrating device ID: {oldId} -> {matchingDevice.Id}");
+                        migratedIds.Add(matchingDevice.Id);
+                        needsSave = true;
+                    }
+                    else
+                    {
+                        Logger.Log($"[MIGRATE] Old device ID not found, removing: {oldId}");
+                        needsSave = true;
+                    }
+                }
+                else
+                {
+                    // Already new-style ID, keep it
+                    migratedIds.Add(oldId);
+                }
+            }
+
+            if (needsSave)
+            {
+                _settings.MonitoredDeviceIds = migratedIds;
+                _settings.Save();
+                Logger.Log("[MIGRATE] Device IDs migrated and saved");
+            }
+            else
+            {
+                Logger.Log("[MIGRATE] No migration needed");
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"[MIGRATE] Error migrating device IDs: {ex.Message}");
+        }
+    }
+
     private void CheckForNewDevices(object? sender, System.Timers.ElapsedEventArgs e)
     {
         try
@@ -423,6 +562,7 @@ public class TrayApplicationContext : ApplicationContext
         _offDelayTimer?.Dispose();
         _deviceCheckTimer?.Dispose();
         _homeAssistant?.Dispose();
+        _wledSender?.Dispose();
     }
 
     private void Exit(object? sender, EventArgs e)
@@ -440,6 +580,7 @@ public class TrayApplicationContext : ApplicationContext
         _offDelayTimer?.Dispose();
         _deviceCheckTimer?.Dispose();
         _homeAssistant?.Dispose();
+        _wledSender?.Dispose();
         Microsoft.Win32.SystemEvents.SessionEnding -= OnSessionEnding;
         Application.Exit();
     }
@@ -475,6 +616,7 @@ public class TrayApplicationContext : ApplicationContext
             _offDelayTimer?.Dispose();
             _deviceCheckTimer?.Dispose();
             _homeAssistant?.Dispose();
+            _wledSender?.Dispose();
         }
         base.Dispose(disposing);
     }

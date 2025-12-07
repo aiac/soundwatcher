@@ -56,14 +56,17 @@ public class WasapiMonitor : IDisposable
                 for (uint i = 0; i < count; i++)
                 {
                     deviceCollection.Item(i, out var device);
-                    device.GetId(out var id);
+                    device.GetId(out var windowsId);
 
-                    var name = GetDeviceFriendlyName(device);
+                    var friendlyName = GetDeviceFriendlyName(device);
+                    var displayName = $"[{flowNames[f]}] {friendlyName}";
 
+                    // Use display name as ID for persistence across reboots/reconnects
                     devices.Add(new AudioDeviceInfo
                     {
-                        Id = id,
-                        Name = $"[{flowNames[f]}] {name}",
+                        Id = displayName,
+                        Name = displayName,
+                        WindowsDeviceId = windowsId,
                         IsInputDevice = (dataFlows[f] == EDataFlow.eCapture)
                     });
 
@@ -131,7 +134,8 @@ public class WasapiMonitor : IDisposable
         {
             try
             {
-                _deviceEnumerator.GetDevice(deviceInfo.Id, out var device);
+                // Use WindowsDeviceId for actual device access
+                _deviceEnumerator.GetDevice(deviceInfo.WindowsDeviceId, out var device);
 
                 IAudioMeterInformation? meter = null;
                 IAudioClient? audioClient = null;
@@ -353,7 +357,8 @@ public class WasapiMonitor : IDisposable
 
 public class AudioDeviceInfo
 {
-    public string Id { get; set; } = string.Empty;
+    public string Id { get; set; } = string.Empty; // User-friendly persistent ID (display name)
     public string Name { get; set; } = string.Empty;
+    public string WindowsDeviceId { get; set; } = string.Empty; // Windows internal device ID
     public bool IsInputDevice { get; set; } = false;
 }

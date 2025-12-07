@@ -14,6 +14,7 @@ public partial class SettingsForm : Form
     private TabPage urlsTab = null!;
     private TabPage timingsTab = null!;
     private TabPage homeAssistantTab = null!;
+    private TabPage wledTab = null!;
 
     // Device controls
     private CheckedListBox deviceListBox = null!;
@@ -47,6 +48,16 @@ public partial class SettingsForm : Form
     private TextBox mqttUsernameTextBox = null!;
     private TextBox mqttPasswordTextBox = null!;
     private TextBox mqttDeviceNameTextBox = null!;
+
+    // WLED controls
+    private CheckBox wledEnabledCheckBox = null!;
+    private TextBox wledHostTextBox = null!;
+    private NumericUpDown wledPortNumeric = null!;
+    private NumericUpDown wledLedCountNumeric = null!;
+    private NumericUpDown wledUpdateIntervalNumeric = null!;
+    private ComboBox wledVisualizationModeCombo = null!;
+    private TextBox wledColorTextBox = null!;
+    private NumericUpDown wledPeakDecayNumeric = null!;
 
     // Bottom buttons
     private Button saveButton = null!;
@@ -95,6 +106,11 @@ public partial class SettingsForm : Form
         homeAssistantTab = new TabPage("Home Assistant");
         InitializeHomeAssistantTab();
         tabControl.TabPages.Add(homeAssistantTab);
+
+        // WLED tab
+        wledTab = new TabPage("WLED");
+        InitializeWledTab();
+        tabControl.TabPages.Add(wledTab);
 
         // Bottom panel with buttons
         var bottomPanel = new Panel
@@ -365,7 +381,7 @@ public partial class SettingsForm : Form
 
         var volumeIntervalLabel = new Label
         {
-            Text = "Peak update interval (milliseconds, 0 = disabled):",
+            Text = "HTTP peak update interval (milliseconds, 0 = disabled):",
             Location = new Point(0, y),
             AutoSize = true
         };
@@ -384,7 +400,7 @@ public partial class SettingsForm : Form
 
         var volumeHelp = new Label
         {
-            Text = "How often to send peak updates for LED control (0 to disable, typically 10-50ms for smooth LED response)",
+            Text = "How often to send HTTP peak updates (0 to disable, typically 10-100ms). For WLED, use the WLED update interval setting instead.",
             Location = new Point(0, y),
             AutoSize = false,
             Size = new Size(540, 30),
@@ -459,6 +475,16 @@ public partial class SettingsForm : Form
         mqttUsernameTextBox.Text = _settings.MqttUsername;
         mqttPasswordTextBox.Text = _settings.MqttPassword;
         mqttDeviceNameTextBox.Text = _settings.MqttDeviceName;
+
+        // Load WLED settings
+        wledEnabledCheckBox.Checked = _settings.WledEnabled;
+        wledHostTextBox.Text = _settings.WledHost;
+        wledPortNumeric.Value = _settings.WledPort;
+        wledLedCountNumeric.Value = _settings.WledLedCount;
+        wledUpdateIntervalNumeric.Value = _settings.WledUpdateIntervalMs;
+        wledVisualizationModeCombo.SelectedIndex = _settings.WledVisualizationMode;
+        wledColorTextBox.Text = _settings.WledColor;
+        wledPeakDecayNumeric.Value = _settings.WledPeakDecayMs;
 
         // Load devices
         LoadDevices();
@@ -596,6 +622,16 @@ public partial class SettingsForm : Form
         _settings.MqttPassword = mqttPasswordTextBox.Text;
         _settings.MqttDeviceName = mqttDeviceNameTextBox.Text;
 
+        // Save WLED settings
+        _settings.WledEnabled = wledEnabledCheckBox.Checked;
+        _settings.WledHost = wledHostTextBox.Text;
+        _settings.WledPort = (int)wledPortNumeric.Value;
+        _settings.WledLedCount = (int)wledLedCountNumeric.Value;
+        _settings.WledUpdateIntervalMs = (int)wledUpdateIntervalNumeric.Value;
+        _settings.WledVisualizationMode = wledVisualizationModeCombo.SelectedIndex;
+        _settings.WledColor = wledColorTextBox.Text;
+        _settings.WledPeakDecayMs = (int)wledPeakDecayNumeric.Value;
+
         _settings.Save();
     }
 
@@ -710,6 +746,193 @@ public partial class SettingsForm : Form
         });
 
         homeAssistantTab.Controls.Add(panel);
+    }
+
+    private void InitializeWledTab()
+    {
+        var panel = new Panel { Dock = DockStyle.Fill, Padding = new Padding(15) };
+
+        int y = 0;
+
+        wledEnabledCheckBox = new CheckBox
+        {
+            Text = "Enable WLED UDP Integration",
+            Location = new Point(0, y),
+            AutoSize = true,
+            Font = new Font(Font, FontStyle.Bold)
+        };
+        y += 35;
+
+        var hostLabel = new Label
+        {
+            Text = "WLED Host (IP or hostname):",
+            Location = new Point(0, y),
+            Width = 180
+        };
+        wledHostTextBox = new TextBox
+        {
+            Location = new Point(190, y - 3),
+            Width = 300,
+            PlaceholderText = "192.168.1.100 or wled.local"
+        };
+        y += 35;
+
+        var portLabel = new Label
+        {
+            Text = "WLED UDP Port:",
+            Location = new Point(0, y),
+            Width = 180
+        };
+        wledPortNumeric = new NumericUpDown
+        {
+            Location = new Point(190, y - 3),
+            Width = 100,
+            Minimum = 1,
+            Maximum = 65535,
+            Value = 21324
+        };
+        y += 35;
+
+        var ledCountLabel = new Label
+        {
+            Text = "Number of LEDs:",
+            Location = new Point(0, y),
+            Width = 180
+        };
+        wledLedCountNumeric = new NumericUpDown
+        {
+            Location = new Point(190, y - 3),
+            Width = 100,
+            Minimum = 1,
+            Maximum = 490,
+            Value = 60
+        };
+        y += 35;
+
+        var updateIntervalLabel = new Label
+        {
+            Text = "WLED update interval (ms):",
+            Location = new Point(0, y),
+            Width = 180
+        };
+        wledUpdateIntervalNumeric = new NumericUpDown
+        {
+            Location = new Point(190, y - 3),
+            Width = 100,
+            Minimum = 0,
+            Maximum = 60000,
+            Increment = 10,
+            Value = 0
+        };
+        y += 28;
+
+        var updateHelp = new Label
+        {
+            Text = "0 = disabled, typically 10-50ms for smooth LED animations",
+            Location = new Point(190, y),
+            AutoSize = false,
+            Size = new Size(350, 20),
+            ForeColor = Color.Gray
+        };
+        y += 35;
+
+        var visualizationLabel = new Label
+        {
+            Text = "Visualization mode:",
+            Location = new Point(0, y),
+            Width = 180
+        };
+        wledVisualizationModeCombo = new ComboBox
+        {
+            Location = new Point(190, y - 3),
+            Width = 300,
+            DropDownStyle = ComboBoxStyle.DropDownList
+        };
+        wledVisualizationModeCombo.Items.AddRange(new object[]
+        {
+            "Gradient (Blue→Cyan→Green→Yellow→Red)",
+            "Left to Right (more peak = more LEDs)",
+            "Center Out (more peak = more LEDs from center)",
+            "Brightness (all LEDs dim/bright by peak)"
+        });
+        wledVisualizationModeCombo.SelectedIndex = 0;
+        y += 35;
+
+        var colorLabel = new Label
+        {
+            Text = "LED Color (hex):",
+            Location = new Point(0, y),
+            Width = 180
+        };
+        wledColorTextBox = new TextBox
+        {
+            Location = new Point(190, y - 3),
+            Width = 100,
+            Text = "#FF0000",
+            PlaceholderText = "#RRGGBB"
+        };
+        var colorHelp = new Label
+        {
+            Text = "Only used for modes 2-4 (e.g. #FF0000 for red, #00FF00 for green)",
+            Location = new Point(300, y),
+            AutoSize = false,
+            Size = new Size(240, 20),
+            ForeColor = Color.Gray
+        };
+        y += 35;
+
+        var decayLabel = new Label
+        {
+            Text = "VU meter decay (ms):",
+            Location = new Point(0, y),
+            Width = 180
+        };
+        wledPeakDecayNumeric = new NumericUpDown
+        {
+            Location = new Point(190, y - 3),
+            Width = 100,
+            Minimum = 50,
+            Maximum = 500,
+            Increment = 10,
+            Value = 150
+        };
+        var decayHelp = new Label
+        {
+            Text = "How fast the meter falls (50-500ms, typical 100-200ms)",
+            Location = new Point(300, y),
+            AutoSize = false,
+            Size = new Size(240, 20),
+            ForeColor = Color.Gray
+        };
+        y += 35;
+
+        var infoLabel = new Label
+        {
+            Text = "WLED UDP Realtime Integration\n\n" +
+                   "This sends audio peak data to WLED devices via UDP for real-time LED visualization.\n\n" +
+                   "Requirements:\n" +
+                   "• WLED device on your local network\n" +
+                   "• UDP Realtime enabled in WLED settings (default port: 21324)",
+            Location = new Point(0, y),
+            AutoSize = false,
+            Size = new Size(540, 120),
+            ForeColor = Color.Gray
+        };
+
+        panel.Controls.AddRange(new Control[]
+        {
+            wledEnabledCheckBox,
+            hostLabel, wledHostTextBox,
+            portLabel, wledPortNumeric,
+            ledCountLabel, wledLedCountNumeric,
+            updateIntervalLabel, wledUpdateIntervalNumeric, updateHelp,
+            visualizationLabel, wledVisualizationModeCombo,
+            colorLabel, wledColorTextBox, colorHelp,
+            decayLabel, wledPeakDecayNumeric, decayHelp,
+            infoLabel
+        });
+
+        wledTab.Controls.Add(panel);
     }
 
     private class DeviceListItem
